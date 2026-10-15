@@ -1,0 +1,124 @@
+# SE-01 CI gate: DCO trailer + license allowlist (card t_7cec4a7e)
+# Policy: OS-PROGRAM-CLA-DCO-STANCE.md §3.6 (SECURITY sets bar, PLATFORM implements)
+# - External PRs: every commit must carry a Signed-off-by trailer matching author (git commit -s)
+# - All PRs: repo must carry an allowlisted LICENSE at the PR head
+#   (Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, CC0-1.0, CC-BY-4.0, CC-BY-SA-4.0)
+name: dco-license-gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dco-license-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SE-01 DCO + license allowlist gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # SE-01 gate logic — single source of truth.
+          # Inlined into .github/workflows/dco-license-gate.yml by build_gate.py.
+          # Also runnable locally: GITHUB_REPOSITORY=owner/repo PR_NUMBER=N GH_TOKEN=... ./gate.sh
+          #
+          # Rules (OS-PROGRAM-CLA-DCO-STANCE.md §3.6, card t_7cec4a7e):
+          #   DCO    — every commit on an EXTERNAL PR (fork PR, or author who is neither
+          #            repo owner nor collaborator) must carry a `Signed-off-by: Name <email>`
+          #            trailer in the last paragraph of the message, matching the commit
+          #            AUTHOR or COMMITTER name+email (case-insensitive) — i.e. `git commit -s`.
+          #   License — repo at the PR head SHA must carry a LICENSE file identified as one of:
+          #            Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, CC0-1.0, CC-BY-4.0, CC-BY-SA-4.0.
+          #            Unidentified ("other"/NOASSERTION) or absent => FAIL.
+          set -uo pipefail
+
+          ALLOWLIST="Apache-2.0|MIT|BSD-2-Clause|BSD-3-Clause|CC0-1.0|CC-BY-4.0|CC-BY-SA-4.0"
+          REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY not set}"
+          PR_NUMBER="${PR_NUMBER:-}"
+          fail=0
+
+          if [[ -z "$PR_NUMBER" ]]; then
+            echo "SE-01 gate: no pull_request context — nothing to check."
+            exit 0
+          fi
+
+          pr=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}")
+          head_sha=$(jq -r '.head.sha' <<<"$pr")
+          author=$(jq -r '.user.login // "unknown"' <<<"$pr")
+          owner=$(jq -r '.base.repo.owner.login // ""' <<<"$pr")
+          head_full=$(jq -r '.head.repo.full_name // ""' <<<"$pr")
+          base_full=$(jq -r '.base.repo.full_name // ""' <<<"$pr")
+
+          # ---- external classification -------------------------------------------------
+          external=false
+          [[ "$head_full" != "$base_full" ]] && external=true   # cross-repository (fork) PR
+          lc() { tr '[:upper:]' '[:lower:]' <<<"$1"; }
+          if [[ "$(lc "$author")" != "$(lc "$owner")" ]] \
+             && ! gh api "repos/${REPO}/collaborators/${author}" --silent 2>/dev/null; then
+            external=true                                          # in-repo branch by an outsider
+          fi
+
+          # ---- DCO: sign-off on every commit (external PRs only) -----------------------
+          if $external; then
+            echo "== DCO check: EXTERNAL PR by @${author} =="
+            commits=$(gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/commits?per_page=100")
+            total=$(jq 'length' <<<"$commits")
+            bad=0
+            while IFS= read -r c; do
+              sha=$(jq -r '.sha[0:10]' <<<"$c")
+              aname=$(jq -r '.commit.author.name // ""' <<<"$c")
+              aemail=$(jq -r '.commit.author.email // ""' <<<"$c")
+              cname=$(jq -r '.commit.committer.name // ""' <<<"$c")
+              cemail=$(jq -r '.commit.committer.email // ""' <<<"$c")
+              msg=$(jq -r '.commit.message // ""' <<<"$c")
+              # trailer block = last paragraph of the commit message
+              block=$(awk 'BEGIN{RS=""; FS="\n"} END{printf "%s", $0}' <<<"$msg")
+              ok=0
+              while IFS= read -r line; do
+                if [[ "$line" =~ ^[Ss]igned-[Oo]ff-[Bb]y:[[:space:]]*(.+?)[[:space:]]*\<([^<>]+)\>[[:space:]]*$ ]]; then
+                  sn="${BASH_REMATCH[1]}"; se="${BASH_REMATCH[2]}"
+                  { [[ "$(lc "$sn")" == "$(lc "$aname")" && "$(lc "$se")" == "$(lc "$aemail")" ]] \
+                    || [[ "$(lc "$sn")" == "$(lc "$cname")" && "$(lc "$se")" == "$(lc "$cemail")" ]]; } && ok=1
+                fi
+              done <<<"$block"
+              if (( ok )); then
+                echo "  ok   ${sha}  Signed-off-by ${aname} <${aemail}>"
+              else
+                echo "  FAIL ${sha}  (${aname} <${aemail}>) — no valid Signed-off-by trailer"
+                bad=1
+              fi
+            done < <(jq -c '.[]' <<<"$commits")
+            if (( bad )); then
+              echo "DCO: FAIL — every commit on an external PR must carry a Signed-off-by trailer"
+              echo "      matching its author (git commit -s). Fix: git rebase --signoff <base> && git push --force-with-lease"
+              fail=1
+            else
+              echo "DCO: PASS (${total} commit(s) signed off)"
+            fi
+          else
+            echo "== DCO check: SKIPPED (internal PR by @${author}) =="
+          fi
+
+          # ---- License allowlist (all PRs) ----------------------------------------------
+          echo "== License allowlist check (head ${head_sha:0:10}) =="
+          if lic_json=$(gh api "repos/${REPO}/license?ref=${head_sha}" 2>/dev/null); then
+            spdx=$(jq -r '.license.spdx_id // "NOASSERTION"' <<<"$lic_json")
+            if [[ "${spdx}" =~ ^(${ALLOWLIST})$ ]]; then
+              echo "  license: ${spdx} — PASS"
+            else
+              echo "  license: ${spdx} — FAIL (not on allowlist: ${ALLOWLIST//|/, })"
+              fail=1
+            fi
+          else
+            echo "  license: NO LICENSE FILE at head — FAIL"
+            fail=1
+          fi
+
+          exit $fail
