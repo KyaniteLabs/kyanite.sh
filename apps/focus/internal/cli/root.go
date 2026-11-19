@@ -70,15 +70,16 @@ func Execute() error {
 }
 
 func init() {
-	// Core commands
-	rootCmd.AddCommand(addCmd)
+	// Core commands.
+	// addCmd is registered by its own init() in add.go, and calendarCmd
+	// (with its subcommands) by its own init() in calendar.go; registering
+	// them here as well added each command twice.
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(completeCmd)
 	rootCmd.AddCommand(deleteCmd)
 	rootCmd.AddCommand(chatCmd)
 	rootCmd.AddCommand(notesCmd)
 	rootCmd.AddCommand(journalCmd)
-	rootCmd.AddCommand(calendarCmd)
 
 	// Interactive commands
 	rootCmd.AddCommand(wizardCmd)

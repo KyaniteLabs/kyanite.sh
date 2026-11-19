@@ -68,7 +68,14 @@ func (m Model) viewLocations() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(m.Styles.Text.Render("n - New Location  |  Enter - View/Edit  |  d - Delete  |  Esc - Back"))
+
+	// Show input prompt if in input mode
+	if m.InputMode {
+		b.WriteString(m.Styles.Accent.Render(fmt.Sprintf("%s: %s█", m.InputPrompt, m.InputValue)))
+		b.WriteString("\n")
+	} else {
+		b.WriteString(m.Styles.Text.Render("n - New Location  |  Enter - View/Edit  |  d - Delete  |  Esc - Back"))
+	}
 
 	// Footer
 	if m.Message != "" {
@@ -104,11 +111,47 @@ func (m Model) handleLocationsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Create new location
 		m.InputMode = true
 		m.InputValue = ""
-		m.Message = "Enter location name:"
+		m.InputPrompt = "Enter location name"
+		m.Message = ""
 		return m, nil
 
 	case "enter":
 		if m.InputMode {
+			// Resolve an armed delete confirmation first: only y/yes
+			// deletes, empty input or any other answer cancels.
+			if m.PendingDelete != nil {
+				pd, ok := m.takeDeleteConfirm()
+				if !ok {
+					m.Message = "Deletion cancelled"
+					return m, nil
+				}
+
+				loc := m.CurrentProject.Locations[pd.ID]
+				if err := storage.DeleteLocation(m.CurrentProject.Directory, pd.ID); err != nil {
+					m.Error = err
+				} else {
+					delete(m.CurrentProject.Locations, pd.ID)
+					m.CurrentProject.TotalLocations--
+					if loc != nil {
+						m.Message = fmt.Sprintf("Deleted location: %s", loc.Name)
+					}
+
+					// Save updated project metadata
+					if err := storage.SaveProjectMetadata(m.CurrentProject); err != nil {
+						m.Error = fmt.Errorf("failed to save project: %w", err)
+					}
+
+					// Adjust selected index
+					if m.SelectedIndex >= len(m.CurrentProject.Locations) {
+						m.SelectedIndex = len(m.CurrentProject.Locations) - 1
+					}
+					if m.SelectedIndex < 0 {
+						m.SelectedIndex = 0
+					}
+				}
+				return m, nil
+			}
+
 			// Finish creating location
 			if m.InputValue != "" {
 				newLoc := &location.Location{
@@ -145,30 +188,15 @@ func (m Model) handleLocationsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "d":
 		if !m.InputMode && locCount > 0 {
-			// Delete selected location
+			// Arm delete confirmation for the selected location; nothing
+			// is deleted until the user types y/yes and presses Enter.
 			locID := utils.FindLocationIDAtIndex(m.CurrentProject.Locations, m.SelectedIndex)
 			if locID != "" {
 				loc := m.CurrentProject.Locations[locID]
-				if err := storage.DeleteLocation(m.CurrentProject.Directory, locID); err != nil {
-					m.Error = err
-				} else {
-					delete(m.CurrentProject.Locations, locID)
-					m.CurrentProject.TotalLocations--
-					m.Message = fmt.Sprintf("Deleted location: %s", loc.Name)
-
-					// Save updated project metadata
-					if err := storage.SaveProjectMetadata(m.CurrentProject); err != nil {
-						m.Error = fmt.Errorf("failed to save project: %w", err)
-					}
-
-					// Adjust selected index
-					if m.SelectedIndex >= len(m.CurrentProject.Locations) {
-						m.SelectedIndex = len(m.CurrentProject.Locations) - 1
-					}
-					if m.SelectedIndex < 0 {
-						m.SelectedIndex = 0
-					}
-				}
+				m.armDeleteConfirm(
+					PendingDelete{Kind: "location", ID: locID, Name: loc.Name},
+					fmt.Sprintf("Delete location '%s'? (y/N)", loc.Name),
+				)
 			}
 		}
 		return m, nil
@@ -177,6 +205,8 @@ func (m Model) handleLocationsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.InputMode {
 			m.InputMode = false
 			m.InputValue = ""
+			m.InputPrompt = ""
+			m.PendingDelete = nil
 			m.Message = ""
 			return m, nil
 		}

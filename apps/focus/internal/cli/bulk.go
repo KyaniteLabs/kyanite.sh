@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -107,14 +109,14 @@ Examples:
 	Run: func(cmd *cobra.Command, args []string) {
 		// Initialize components
 		repo := repository.NewStoreRepository(utils.GetStoragePath())
-		engine := engine.New(repo)
+		eng := engine.New(repo)
 
 		var tasksToDelete []models.Task
 
 		// Get tasks based on input
 		if bulkPriority != "" || bulkCategory != "" {
 			// Filter tasks
-			allTasks, err := engine.ListTasks("all")
+			allTasks, err := eng.ListTasks("all")
 			if err != nil {
 				showBulkError(fmt.Sprintf("Failed to load tasks: %s", err.Error()))
 				return
@@ -123,7 +125,7 @@ Examples:
 		} else if len(args) > 0 {
 			// Delete specific task IDs
 			for _, id := range args {
-				task, err := engine.GetTask(id)
+				task, err := eng.GetTask(id)
 				if err != nil {
 					showBulkWarning(fmt.Sprintf("Task %s not found, skipping", id))
 					continue
@@ -143,41 +145,44 @@ Examples:
 		// Show warning
 		showBulkDeleteWarning(tasksToDelete)
 
-		// Confirm deletion
-		fmt.Println()
-		confirmStyle := lipgloss.Style{}.
-			Foreground(styles.SynthwaveYellow).
-			Background(styles.DarkVoid).
-			Bold(true).
-			Padding(0, 1)
-		fmt.Println(confirmStyle.Render("⚠️  Type 'yes' to confirm deletion:"))
-
-		var confirm string
-		_, err := fmt.Scanln(&confirm)
-		if err != nil {
-			showBulkError(fmt.Sprintf("Failed to read confirmation: %s", err.Error()))
+		// Confirm deletion, then delete. The typed word "yes" is the only
+		// reply that proceeds; empty input and any other word cancel.
+		deleted, failed, confirmed := confirmAndBulkDelete(eng, tasksToDelete, os.Stdin)
+		if !confirmed {
 			return
-		}
-
-		if strings.ToLower(confirm) != "yes" {
-			showBulkWarning("Deletion cancelled")
-			return
-		}
-
-		// Delete tasks
-		deleted := 0
-		failed := 0
-		for _, task := range tasksToDelete {
-			if err := engine.DeleteTask(task.ID); err != nil {
-				failed++
-				showBulkWarning(fmt.Sprintf("Failed to delete task %s: %s", task.ID[:8], err.Error()))
-			} else {
-				deleted++
-			}
 		}
 
 		showBulkDeleteSuccess(deleted, failed)
 	},
+}
+
+// confirmAndBulkDelete asks for the typed word "yes" and, only on that
+// reply, deletes the tasks. Empty input (including an unreadable stdin)
+// cancels without deleting anything.
+func confirmAndBulkDelete(eng *engine.Engine, tasks []models.Task, in io.Reader) (deleted, failed int, confirmed bool) {
+	confirmStyle := lipgloss.Style{}.
+		Foreground(styles.SynthwaveYellow).
+		Background(styles.DarkVoid).
+		Bold(true).
+		Padding(0, 1)
+	fmt.Println()
+	fmt.Println(confirmStyle.Render("⚠️  Type 'yes' to confirm deletion:"))
+
+	if !readTypedYes(in) {
+		showBulkWarning("Deletion cancelled")
+		return 0, 0, false
+	}
+
+	for _, task := range tasks {
+		if err := eng.DeleteTask(task.ID); err != nil {
+			failed++
+			showBulkWarning(fmt.Sprintf("Failed to delete task %s: %s", task.ID[:8], err.Error()))
+		} else {
+			deleted++
+		}
+	}
+
+	return deleted, failed, true
 }
 
 func filterBulkTasks(tasks []models.Task) []models.Task {

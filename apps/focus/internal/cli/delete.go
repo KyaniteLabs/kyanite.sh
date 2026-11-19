@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/kyanite/focus/internal/engine"
 	"github.com/kyanite/focus/internal/repository"
@@ -16,32 +18,42 @@ var deleteCmd = &cobra.Command{
 	Long:  "🌸 Permanently remove tasks from your digital realm",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("🌪️ Initializing Mission Erasure Protocol 🌪️")
-		fmt.Println("~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~")
-
-		taskID := args[0]
-
 		// Initialize components
 		repo := repository.NewStoreRepository(utils.GetStoragePath())
-		engine := engine.New(repo)
+		eng := engine.New(repo)
 
-		// Get task first to show what we're deleting
-		task, err := engine.GetTask(taskID)
-		if err != nil {
-			fmt.Printf("❌ Mission not found: %v\n", err)
-			return
-		}
-
-		// Delete task
-		err = engine.DeleteTask(taskID)
-		if err != nil {
-			fmt.Printf("❌ Error erasing mission: %v\n", err)
-			return
-		}
-
-		fmt.Println("✅ Mission erased successfully!")
-		fmt.Printf("📋 %s\n", task.Description)
-		fmt.Printf("🔢 ID: %s\n", task.ID)
-		fmt.Println("\n💡 Pro Tip: Deleted tasks are gone forever - confirm your choice!")
+		runDeleteTask(eng, args[0], os.Stdin, os.Stdout)
 	},
+}
+
+// runDeleteTask deletes one task after showing it and asking a y/N
+// confirmation. Empty input or anything other than y/yes cancels the
+// delete before the store is touched.
+func runDeleteTask(eng *engine.Engine, taskID string, in io.Reader, out io.Writer) {
+	fmt.Fprintln(out, "🌪️ Initializing Mission Erasure Protocol 🌪️")
+	fmt.Fprintln(out, "~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~")
+
+	// Get task first to show what we're deleting
+	task, err := eng.GetTask(taskID)
+	if err != nil {
+		fmt.Fprintf(out, "❌ Mission not found: %v\n", err)
+		return
+	}
+
+	fmt.Fprintf(out, "📋 %s\n", task.Description)
+	fmt.Fprintf(out, "🔢 ID: %s\n", task.ID)
+
+	if !confirmYesNo(in, out, "⚠️  Erase this mission permanently") {
+		fmt.Fprintln(out, "❌ Mission erasure cancelled.")
+		return
+	}
+
+	// Delete task
+	err = eng.DeleteTask(taskID)
+	if err != nil {
+		fmt.Fprintf(out, "❌ Error erasing mission: %v\n", err)
+		return
+	}
+
+	fmt.Fprintln(out, "✅ Mission erased successfully!")
 }

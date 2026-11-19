@@ -58,24 +58,19 @@ func main() {
 	fmt.Println()
 	fmt.Println("Choose a testing option:")
 	fmt.Println("1. Launch noise.sh for manual theme testing")
-	fmt.Println("2. Launch with debug mode")
-	fmt.Println("3. Launch in quick mode (scratch mode)")
-	fmt.Println("4. Run theme switching demo")
-	fmt.Println("5. Exit")
+	fmt.Println("2. Run theme switching demo")
+	fmt.Println("3. Exit")
 	fmt.Println()
 
-	choice := getUserChoice("Select option (1-5): ")
+	choice := getUserChoice("Select option (1-3): ")
 
 	switch choice {
 	case "1":
+		// noise takes no launch flags; --debug and quick were never read.
 		launchApplication("")
 	case "2":
-		launchApplication("--debug")
-	case "3":
-		launchApplication("quick")
-	case "4":
 		runThemeDemo()
-	case "5":
+	case "3":
 		fmt.Println("Testing completed. Goodbye!")
 		return
 	default:

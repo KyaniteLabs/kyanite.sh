@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -182,21 +184,36 @@ var templateDeleteCmd = &cobra.Command{
 		name := strings.Join(args, " ")
 
 		templateStore := templates.NewStore(getTemplatePath())
-		template, err := templateStore.GetByName(name)
-		if err != nil {
-			showTemplateError(fmt.Sprintf("Template '%s' not found", name))
-			return
-		}
-
-		if err := templateStore.Delete(template.ID); err != nil {
-			showTemplateError(fmt.Sprintf("Failed to delete template: %s", err.Error()))
-			return
-		}
-
-		fmt.Println(lipgloss.Style{}.
-			Foreground(styles.SynthwaveGreen).
-			Render(fmt.Sprintf("✅ Template '%s' deleted successfully", name)))
+		runTemplateDelete(templateStore, name, os.Stdin, os.Stdout)
 	},
+}
+
+// runTemplateDelete deletes one template after showing it and asking a y/N
+// confirmation. Empty input or anything other than y/yes cancels the
+// delete before the template store is touched.
+func runTemplateDelete(templateStore *templates.Store, name string, in io.Reader, out io.Writer) {
+	template, err := templateStore.GetByName(name)
+	if err != nil {
+		showTemplateError(fmt.Sprintf("Template '%s' not found", name))
+		return
+	}
+
+	fmt.Fprintf(out, "📋 Template: %s\n", template.Name)
+	fmt.Fprintf(out, "📝 %s\n", template.Description)
+
+	if !confirmYesNo(in, out, "⚠️  Delete this template permanently") {
+		fmt.Fprintln(out, "❌ Template deletion cancelled.")
+		return
+	}
+
+	if err := templateStore.Delete(template.ID); err != nil {
+		showTemplateError(fmt.Sprintf("Failed to delete template: %s", err.Error()))
+		return
+	}
+
+	fmt.Println(lipgloss.Style{}.
+		Foreground(styles.SynthwaveGreen).
+		Render(fmt.Sprintf("✅ Template '%s' deleted successfully", name)))
 }
 
 func getTemplatePath() string {

@@ -56,13 +56,11 @@ echo LAUNCH OPTIONS
 echo ========================================
 echo.
 echo 1. Launch normally
-echo 2. Launch with debug mode
-echo 3. Launch in quick mode (scratch mode)
-echo 4. Launch with theme testing
-echo 5. Exit
+echo 2. Launch with theme testing tips
+echo 3. Exit
 echo.
-
-set /p choice="Select launch option (1-5): "
+REM noise takes no launch flags: --debug and quick were never read by the binary.
+set /p choice="Select launch option (1-3): "
 
 if "%choice%"=="1" (
     echo.
@@ -70,19 +68,9 @@ if "%choice%"=="1" (
     noise.exe
 ) else if "%choice%"=="2" (
     echo.
-    echo Launching noise.sh with debug mode...
-    noise.exe --debug
-) else if "%choice%"=="3" (
-    echo.
-    echo Launching noise.sh in quick mode...
-    noise.exe quick
-) else if "%choice%"=="4" (
-    echo.
     echo ========================================
-    echo THEME TESTING MODE
+    echo THEME TESTING
     echo ========================================
-    echo.
-    echo Testing all 10 Kyanite themes...
     echo.
     echo Available themes:
     echo 1. Monochrome
@@ -99,9 +87,9 @@ if "%choice%"=="1" (
     echo Use Ctrl+Shift+T to cycle through themes
     echo Press F1 for help while in the application
     echo.
-    set /p continue="Press Enter to launch with theme testing..."
-    noise.exe --debug
-) else if "%choice%"=="5" (
+    set /p continue="Press Enter to launch..."
+    noise.exe
+) else if "%choice%"=="3" (
     echo.
     echo Exiting...
     exit /b 0

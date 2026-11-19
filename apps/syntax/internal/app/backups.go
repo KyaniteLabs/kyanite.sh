@@ -62,7 +62,14 @@ func (m Model) viewBackups() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(m.Styles.Text.Render("c - Create Backup  |  r - Restore  |  d - Delete  |  Esc - Back"))
+
+	// Show input prompt if in input mode (delete confirmation)
+	if m.InputMode {
+		b.WriteString(m.Styles.Accent.Render(fmt.Sprintf("%s: %s█", m.InputPrompt, m.InputValue)))
+		b.WriteString("\n")
+	} else {
+		b.WriteString(m.Styles.Text.Render("c - Create Backup  |  r - Restore  |  d - Delete  |  Esc - Back"))
+	}
 
 	// Footer
 	if m.Message != "" {
@@ -86,6 +93,50 @@ func (m Model) handleBackupsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	backupCount := len(backups)
+
+	// Handle input mode for delete confirmation
+	if m.InputMode {
+		switch msg.String() {
+		case "enter":
+			// Only y/yes deletes; empty input or any other answer cancels.
+			pd, ok := m.takeDeleteConfirm()
+			if !ok {
+				m.Message = "Deletion cancelled"
+				return m, nil
+			}
+
+			if err := backup.DeleteBackup(pd.Path); err != nil {
+				m.Error = err
+			} else {
+				m.Message = "Backup deleted"
+				// Adjust selected index if needed
+				if m.SelectedIndex >= backupCount-1 {
+					m.SelectedIndex = max(0, backupCount-2)
+				}
+			}
+			return m, nil
+
+		case "esc":
+			m.InputMode = false
+			m.InputValue = ""
+			m.InputPrompt = ""
+			m.PendingDelete = nil
+			return m, nil
+
+		case "backspace":
+			if len(m.InputValue) > 0 {
+				m.InputValue = m.InputValue[:len(m.InputValue)-1]
+			}
+			return m, nil
+
+		default:
+			// Add character to input
+			if len(msg.String()) == 1 {
+				m.InputValue += msg.String()
+			}
+			return m, nil
+		}
+	}
 
 	switch msg.String() {
 	case "up", "k":
@@ -126,18 +177,15 @@ func (m Model) handleBackupsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "d":
-		// Delete selected backup
+		// Arm delete confirmation for the selected backup; nothing is
+		// deleted until the user types y/yes and presses Enter.
 		if backupCount > 0 && m.SelectedIndex < backupCount {
 			bkp := backups[m.SelectedIndex]
-			if err := backup.DeleteBackup(bkp.Path); err != nil {
-				m.Error = err
-			} else {
-				m.Message = "Backup deleted"
-				// Adjust selected index if needed
-				if m.SelectedIndex >= backupCount-1 {
-					m.SelectedIndex = max(0, backupCount-2)
-				}
-			}
+			name := bkp.Timestamp.Format("2006-01-02 15:04:05")
+			m.armDeleteConfirm(
+				PendingDelete{Kind: "backup", Path: bkp.Path, Name: name, Index: m.SelectedIndex},
+				fmt.Sprintf("Delete backup from %s? (y/N)", name),
+			)
 		}
 		return m, nil
 

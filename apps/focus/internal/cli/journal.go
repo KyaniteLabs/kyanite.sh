@@ -156,6 +156,11 @@ var journalViewCmd = &cobra.Command{
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		date := journalDate
+		if len(args) > 0 {
+			// The documented form is `focus journal view [date]`; honor the
+			// positional over the legacy --date flag when both are given.
+			date = args[0]
+		}
 		if date == "" {
 			date = time.Now().Format("2006-01-02")
 		}
