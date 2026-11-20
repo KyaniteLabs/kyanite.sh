@@ -22,9 +22,15 @@ fi
 
 echo "✅ Ollama is installed"
 
-# Pull required model
-echo "📥 Pulling llama3 model..."
-ollama pull llama3
+# Pull the local AI model (optional; the suite works offline without it)
+read -p "📥 Pull the llama3 model with Ollama now? (y/N): " pull_model
+pull_model="${pull_model,,}"
+if [ "$pull_model" = "y" ] || [ "$pull_model" = "yes" ]; then
+    echo "📥 Pulling llama3 model..."
+    ollama pull llama3
+else
+    echo "⏭️  Skipping the model pull. AI features will use whatever models Ollama already has."
+fi
 
 # Install Go dependencies
 echo "📦 Installing Go dependencies..."

@@ -44,7 +44,7 @@ func (m Model) viewScenes() string {
 
 	// Show input prompt if in input mode
 	if m.InputMode {
-		b.WriteString(m.Styles.Accent.Render(fmt.Sprintf("Enter scene name: %s█", m.InputValue)))
+		b.WriteString(m.Styles.Accent.Render(fmt.Sprintf("%s: %s█", m.InputPrompt, m.InputValue)))
 		b.WriteString("\n")
 	} else {
 		b.WriteString(m.Styles.Text.Render("n - New Scene | v - Validate | d - Delete | Enter - Edit | ↑/↓ - Navigate | Esc - Back"))
@@ -59,10 +59,45 @@ func (m Model) viewScenes() string {
 }
 
 func (m Model) handleScenesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Handle input mode for scene creation
+	// Handle input mode for scene creation and delete confirmation
 	if m.InputMode {
 		switch msg.String() {
 		case "enter":
+			// Resolve an armed delete confirmation first: only y/yes
+			// deletes, empty input or any other answer cancels.
+			if m.PendingDelete != nil {
+				pd, ok := m.takeDeleteConfirm()
+				if !ok {
+					m.Message = "Deletion cancelled"
+					return m, nil
+				}
+
+				err := storage.DeleteScene(m.CurrentProject.Directory, pd.ID)
+				if err != nil {
+					m.Error = err
+					return m, nil
+				}
+
+				sc := m.CurrentProject.Scenes[pd.ID]
+				delete(m.CurrentProject.Scenes, pd.ID)
+				m.CurrentProject.TotalScenes--
+
+				if err := storage.SaveProjectMetadata(m.CurrentProject); err != nil {
+					m.Error = fmt.Errorf("failed to save project: %w", err)
+				} else if sc != nil {
+					m.Message = fmt.Sprintf("Deleted scene: %s", sc.Name)
+				}
+
+				// Adjust selected index
+				if m.SelectedIndex >= len(m.CurrentProject.Scenes) {
+					m.SelectedIndex = len(m.CurrentProject.Scenes) - 1
+				}
+				if m.SelectedIndex < 0 {
+					m.SelectedIndex = 0
+				}
+				return m, nil
+			}
+
 			// Create scene with user-provided name
 			if m.InputValue != "" {
 				sc := &scene.Scene{
@@ -96,6 +131,8 @@ func (m Model) handleScenesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.InputMode = false
 			m.InputValue = ""
+			m.InputPrompt = ""
+			m.PendingDelete = nil
 			return m, nil
 
 		case "backspace":
@@ -143,38 +180,19 @@ func (m Model) handleScenesKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Enter input mode for scene creation
 		m.InputMode = true
 		m.InputValue = ""
+		m.InputPrompt = "Enter scene name"
 		return m, nil
 
 	case "d":
-		// Delete selected scene
+		// Arm delete confirmation for the selected scene; nothing is
+		// deleted until the user types y/yes and presses Enter.
 		sceneID := utils.FindSceneIDAtIndex(m.CurrentProject.Scenes, m.SelectedIndex)
 		if sceneID != "" {
 			sc := m.CurrentProject.Scenes[sceneID]
-			// Delete the scene
-			err := storage.DeleteScene(m.CurrentProject.Directory, sceneID)
-			if err != nil {
-				m.Error = err
-				return m, nil
-			}
-
-			// Remove from project's scene map
-			delete(m.CurrentProject.Scenes, sceneID)
-			m.CurrentProject.TotalScenes--
-
-			// Update project metadata
-			if err := storage.SaveProjectMetadata(m.CurrentProject); err != nil {
-				m.Error = fmt.Errorf("failed to save project: %w", err)
-			} else {
-				m.Message = fmt.Sprintf("Deleted scene: %s", sc.Name)
-			}
-
-			// Adjust selected index
-			if m.SelectedIndex >= len(m.CurrentProject.Scenes) {
-				m.SelectedIndex = len(m.CurrentProject.Scenes) - 1
-			}
-			if m.SelectedIndex < 0 {
-				m.SelectedIndex = 0
-			}
+			m.armDeleteConfirm(
+				PendingDelete{Kind: "scene", ID: sceneID, Name: sc.Name},
+				fmt.Sprintf("Delete scene '%s'? (y/N)", sc.Name),
+			)
 		}
 		return m, nil
 

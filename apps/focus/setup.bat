@@ -22,9 +22,15 @@ if %errorlevel% neq 0 (
 
 echo ✅ Ollama is installed
 
-REM Pull required model
-echo 📥 Pulling llama3 model...
-ollama pull llama3
+REM Pull the local AI model (optional; the suite works offline without it)
+set "pull_model="
+set /p pull_model=📥 Pull the llama3 model with Ollama now? (y/N): 
+if /i "%pull_model%"=="y" (
+    echo 📥 Pulling llama3 model...
+    ollama pull llama3
+) else (
+    echo ⏭️  Skipping the model pull. AI features will use whatever models Ollama already has.
+)
 
 REM Install Go dependencies
 echo 📦 Installing Go dependencies...

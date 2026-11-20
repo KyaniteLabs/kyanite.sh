@@ -41,7 +41,7 @@ echo.
 echo 🚀 Launching focus.sh Dashboard...
 echo.
 cd /d "%~dp0"
-focus.exe dashboard
+focus.exe
 goto menu
 
 :addtask
@@ -122,21 +122,21 @@ goto menu
 
 :journalview
 echo.
-set /p journaldate="Enter date (YYYY-MM-DD) or leave blank for today: 
+set /p journaldate="Enter date (YYYY-MM-DD) or leave blank for today: "
 cd /d "%~dp0"
 if "%journaldate%"=="" (
     focus.exe journal view
 ) else (
-    focus.exe journal view --date "%journaldate%"
+    focus.exe journal view "%journaldate%"
 )
 pause
 goto menu
 
 :journalsearch
 echo.
-set /p searchquery="Enter search query: 
+set /p searchquery="Enter search query: "
 cd /d "%~dp0"
-focus.exe journal search --query "%searchquery%"
+focus.exe journal search "%searchquery%"
 pause
 goto menu
 

@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -54,15 +55,15 @@ type Model struct {
 	// ============================================================
 	// Theme State - Visual styling and appearance
 	// ============================================================
-	ThemeManager *Manager        // Manages theme switching
-	CurrentTheme design.Theme    // Active theme
-	Styles       Styles          // Computed styles from theme
+	ThemeManager *Manager     // Manages theme switching
+	CurrentTheme design.Theme // Active theme
+	Styles       Styles       // Computed styles from theme
 
 	// ============================================================
 	// Project State - Story projects and data
 	// ============================================================
-	CurrentProject *story.Project     // Active project being edited
-	Projects       []*story.Project   // List of available projects
+	CurrentProject *story.Project   // Active project being edited
+	Projects       []*story.Project // List of available projects
 
 	// ============================================================
 	// Input State - User input handling
@@ -70,7 +71,13 @@ type Model struct {
 	SelectedIndex int    // Index of selected item in lists
 	InputMode     bool   // Whether input field is active
 	InputValue    string // Current input field value
+	InputPrompt   string // Label shown over the input line while InputMode is active
 	ReplaceValue  string // Replacement value for find & replace
+
+	// PendingDelete holds an in-flight destructive delete waiting for a
+	// y/N answer. Pressing 'd' arms it; only typing y/yes and pressing
+	// Enter confirms. Empty input or any other answer cancels.
+	PendingDelete *PendingDelete
 
 	// ============================================================
 	// Editor State - Text editing and buffer management
@@ -83,21 +90,21 @@ type Model struct {
 	// ============================================================
 	// Feature Integrations - AI and spell checking
 	// ============================================================
-	Brain        *ai.Brain           // AI inference brain (pkg/ai)
-	AISuggestion *syntaiai.Suggestion       // Current AI suggestion
-	AIGenerating bool                 // Whether AI is generating
-	SpellChecker *spellcheck.Checker  // Spell check integration
-	SessionID    string               // Unique session ID for brain session persistence
-	AIPanel       aipanel.Model       // AI writing partner side panel
-	AIPanelInput  string              // Input for check:/voice: commands in AI panel
-	CrossAppContext string // Cross-app context from the Brain, loaded when AI panel opens
+	Brain           *ai.Brain            // AI inference brain (pkg/ai)
+	AISuggestion    *syntaiai.Suggestion // Current AI suggestion
+	AIGenerating    bool                 // Whether AI is generating
+	SpellChecker    *spellcheck.Checker  // Spell check integration
+	SessionID       string               // Unique session ID for brain session persistence
+	AIPanel         aipanel.Model        // AI writing partner side panel
+	AIPanelInput    string               // Input for check:/voice: commands in AI panel
+	CrossAppContext string               // Cross-app context from the Brain, loaded when AI panel opens
 
 	// ============================================================
 	// Auto-save State - Automatic saving and status
 	// ============================================================
-	LastSaveTime time.Time   // Time of last save
-	SaveStatus   SaveStatus  // Current save status
-	LastEditTime time.Time   // Time of last edit (for auto-save)
+	LastSaveTime time.Time  // Time of last save
+	SaveStatus   SaveStatus // Current save status
+	LastEditTime time.Time  // Time of last edit (for auto-save)
 
 	// ============================================================
 	// User Feedback - Messages and errors
@@ -114,6 +121,45 @@ const (
 	SaveStatusSaving
 	SaveStatusUnsaved
 )
+
+// PendingDelete describes a destructive delete that is waiting for a y/N
+// confirmation before it runs.
+type PendingDelete struct {
+	Kind  string // "scene", "location" or "backup"
+	ID    string // scene or location ID
+	Path  string // backup file path
+	Name  string // display name
+	Index int    // list index of the item (backups)
+}
+
+// armDeleteConfirm puts the model into delete-confirmation mode: the
+// delete is staged but nothing is removed until the user types y/yes and
+// presses Enter.
+func (m *Model) armDeleteConfirm(pd PendingDelete, prompt string) {
+	m.PendingDelete = &pd
+	m.InputMode = true
+	m.InputValue = ""
+	m.InputPrompt = prompt
+	m.Message = ""
+}
+
+// takeDeleteConfirm closes out an armed delete confirmation: it reads the
+// typed answer, resets the input state and reports the staged delete
+// together with whether it was confirmed. Only "y"/"yes" confirms; empty
+// input and any other answer cancel.
+func (m *Model) takeDeleteConfirm() (*PendingDelete, bool) {
+	pd := m.PendingDelete
+	answer := strings.ToLower(strings.TrimSpace(m.InputValue))
+	m.PendingDelete = nil
+	m.InputMode = false
+	m.InputValue = ""
+	m.InputPrompt = ""
+
+	if pd == nil {
+		return nil, false
+	}
+	return pd, answer == "y" || answer == "yes"
+}
 
 // AutoSaveTickMsg is sent periodically to trigger auto-save check
 type AutoSaveTickMsg struct{}
@@ -417,9 +463,9 @@ func (m *Model) IsEditorActive() bool {
 // CanAutoSave returns whether auto-save can be performed
 func (m *Model) CanAutoSave() bool {
 	return m.IsEditorActive() &&
-	       m.HasProject() &&
-	       m.HasUnsavedChanges() &&
-	       time.Since(m.LastEditTime) >= 3*time.Second
+		m.HasProject() &&
+		m.HasUnsavedChanges() &&
+		time.Since(m.LastEditTime) >= 3*time.Second
 }
 
 // ResetInputState clears all input-related state

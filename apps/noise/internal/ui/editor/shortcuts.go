@@ -117,7 +117,7 @@ func (sm *ShortcutManager) initializeDefaultBindings() {
 
 	// Editor features
 	sm.registerBinding("ctrl+l", key.NewBinding(key.WithKeys("ctrl+l"), key.WithHelp("ctrl+l", "toggle line nums")), "Toggle line numbers", ContextEditor, "View")
-	sm.registerBinding("ctrl+w", key.NewBinding(key.WithKeys("ctrl+w"), key.WithHelp("ctrl+w", "toggle wrap")), "Toggle word wrap", ContextEditor, "View")
+	// ctrl+w stays bound to Close file only; word wrap is ctrl+shift+w.
 	sm.registerBinding("ctrl+shift+w", key.NewBinding(key.WithKeys("ctrl+shift+w"), key.WithHelp("ctrl+shift+w", "toggle wrap")), "Toggle word wrap", ContextEditor, "View")
 	sm.registerBinding("ctrl+i", key.NewBinding(key.WithKeys("ctrl+i"), key.WithHelp("ctrl+i", "toggle indent")), "Toggle auto-indent", ContextEditor, "View")
 	sm.registerBinding("ctrl+b", key.NewBinding(key.WithKeys("ctrl+b"), key.WithHelp("ctrl+b", "toggle bracket")), "Toggle bracket matching", ContextEditor, "View")
@@ -133,7 +133,6 @@ func (sm *ShortcutManager) initializeDefaultBindings() {
 	sm.registerBinding("ctrl+shift+t", key.NewBinding(key.WithKeys("ctrl+shift+t"), key.WithHelp("ctrl+shift+t", "cycle theme")), "Cycle theme", ContextGlobal, "Theme")
 	// Additional theme shortcuts
 	sm.registerBinding("ctrl+shift+n", key.NewBinding(key.WithKeys("ctrl+shift+n"), key.WithHelp("ctrl+shift+n", "next theme")), "Next theme", ContextGlobal, "Tools")
-	sm.registerBinding("ctrl+shift+p", key.NewBinding(key.WithKeys("ctrl+shift+p"), key.WithHelp("ctrl+shift+p", "prev theme")), "Previous theme", ContextGlobal, "Tools")
 	sm.registerBinding("ctrl+m", key.NewBinding(key.WithKeys("ctrl+m"), key.WithHelp("ctrl+m", "audio tools")), "Audio tools", ContextGlobal, "Tools")
 
 	// Preview navigation
