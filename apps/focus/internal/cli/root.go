@@ -65,8 +65,8 @@ func Execute() error {
 	pterm.Success.Println("✨ focus.sh - Task Management System Online")
 	pterm.Info.Println("🔗 Connecting to Kyanite Creative Suite...")
 
-	// Execute the root command
-	return rootCmd.Execute()
+	// Execute the root command behind the bounded execution guard.
+	return executeCommand(rootCmd)
 }
 
 func init() {

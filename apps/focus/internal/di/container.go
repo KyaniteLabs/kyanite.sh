@@ -48,13 +48,19 @@ func (c *Container) GetRepository() repository.Repository {
 	return c.repo
 }
 
-// GetEngine returns the singleton engine instance
+// GetEngine returns the singleton engine instance.
+//
+// The repository is resolved before c.mu is taken. GetRepository locks the
+// same mutex, and sync.Mutex is not reentrant, so calling it while holding the
+// lock deadlocked every command that reached the engine (kanban t_8b25250e).
 func (c *Container) GetEngine() *engine.Engine {
+	repo := c.GetRepository()
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.engine == nil {
-		c.engine = engine.New(c.GetRepository())
+		c.engine = engine.New(repo)
 		// Wire AI manager for cache invalidation
 		if c.aiManager != nil {
 			c.engine.SetAIManager(c.aiManager)
