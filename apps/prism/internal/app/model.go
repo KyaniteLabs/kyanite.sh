@@ -11,7 +11,6 @@ import (
 	"github.com/kyanite/prism/internal/ui"
 )
 
-
 // Screen represents different screens in the app
 type Screen int
 
@@ -35,7 +34,6 @@ type Model struct {
 	SessionID     string
 	lastPalette   string
 	brain         *ai.Brain
-
 
 	// Screen models
 	menuModel      ui.MenuModel
@@ -72,7 +70,6 @@ func NewModel(brain *ai.Brain) Model {
 	}
 }
 
-
 // LoadRecentSession attempts to load and print the most recent session.
 // Best-effort: failures are silently ignored.
 func (m *Model) LoadRecentSession() {
@@ -94,7 +91,6 @@ func (m *Model) LoadRecentSession() {
 		m.lastPalette = s.Title
 	}
 }
-
 
 // SaveCurrentSession persists the current session state before exit.
 // Best-effort: failures are silently ignored.
@@ -121,7 +117,6 @@ func (m *Model) SaveCurrentSession() {
 	_ = m.brain.SaveCrossAppContext(ctx, "syntax", "palette_usage", summary, 0.5)
 }
 
-
 // SetLastPalette records the most recently generated/saved palette name.
 func (m *Model) SetLastPalette(name string) {
 	m.lastPalette = name
@@ -143,7 +138,13 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		return m.handleKeys(msg)
+		next, cmd, handled := m.handleKeys(msg)
+		if handled {
+			return next, cmd
+		}
+		// Not a global shortcut: forward the key to the active screen, or
+		// the menu and every screen below it would be unreachable by keyboard.
+		return next.routeToScreen(msg)
 
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width
@@ -185,34 +186,40 @@ func (m Model) View() string {
 	}
 }
 
-// handleKeys handles global keyboard shortcuts
-func (m Model) handleKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+// handleKeys handles global keyboard shortcuts. The bool reports whether the
+// key was consumed; unconsumed keys are forwarded to the active screen.
+func (m Model) handleKeys(msg tea.KeyMsg) (Model, tea.Cmd, bool) {
 	// Global shortcuts
 	switch msg.String() {
 	case "ctrl+q":
-		return m, tea.Quit
+		return m, tea.Quit, true
 
 	case "ctrl+h", "?":
 		m.showHelp = !m.showHelp
-		return m, nil
+		return m, nil, true
 
 	case "ctrl+shift+t":
 		m.ThemeManager.NextTheme()
-		return m, nil
+		return m, nil, true
 
 	case "esc":
 		if m.showHelp {
 			m.showHelp = false
-			return m, nil
+			return m, nil, true
 		}
 		if m.CurrentScreen != ScreenMenu {
 			m.CurrentScreen = ScreenMenu
-			return m, nil
+			return m, nil, true
 		}
-		return m, tea.Quit
+		return m, tea.Quit, true
 	}
 
-	return m, nil
+	// The help overlay is modal: keys must not reach the screen behind it.
+	if m.showHelp {
+		return m, nil, true
+	}
+
+	return m, nil, false
 }
 
 // routeToScreen routes messages to the appropriate screen model
